@@ -2,6 +2,7 @@ import Product from "../models/Product.js";
 import Order from "../models/Order.js";
 import stripe from "stripe";
 import User from "../models/User.js";
+import { sendOrderConfirmation } from "../nodemailer.js";
 
 // Place Order COD : /api/order/cod
 export const placeOrderCOD = async (req, res) => {
@@ -20,13 +21,17 @@ export const placeOrderCOD = async (req, res) => {
     // Add Tax Charge (2%)
     amount += Math.floor(amount * 0.02);
 
-    await Order.create({
+    const ord = await Order.create({
       userId,
       items,
       amount,
       address,
       paymentType: "COD",
     });
+
+    const user = await User.findById(userId);
+    await sendOrderConfirmation(user.email, ord._id);
+    await sendOrderConfirmation(process.env.SELLER_EMAIL, ord._id);
 
     return res.json({ success: true, message: "Order Placed Successfully" });
   } catch (error) {
@@ -148,8 +153,12 @@ export const stripeWebhooks = async (req, res) => {
           isPaid: true,
         });
       }
-      // Clear Cart Items
       await User.findByIdAndUpdate(userId, { cartItems: {} });
+
+      const user = await User.findById(userId);
+      await sendOrderConfirmation(user.email, orderId);
+      await sendOrderConfirmation(process.env.SELLER_EMAIL, orderId);
+      // Clear Cart Items
       break;
     }
     case "payment_intent.payment_failed": {
